@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h> 
+#include <pthread.h>
 
 #define BUFSIZE 8192
 #define LISTENQ 1024 
@@ -15,13 +16,15 @@ void handleClient(int clientSock);
 void handleError(int errNum, int clientSock);
 void handleReq(int clientSock, char *fName, char *version);
 int handleType(char *buf, char *type);
+void *thread(void *vargp);
 
 int main(int argc, char **argv){
     int portno = atoi(argv[1]); /* port to listen on */
     struct sockaddr_in clientaddr; /* client addr */
     int clientlen; /* byte size of client's address */
-    int sockfd; /* socket */
+    int sockfd = sizeof(struct sockaddr_in); /* socket */
     int *clientSock; /*client request*/
+    pthread_t tid;
 
     /*check command line arguments*/
     if (argc != 2){
@@ -39,8 +42,17 @@ int main(int argc, char **argv){
             perror("Accept failure");
             exit(EXIT_FAILURE);
         }
-        handleClient(clientSock);
+        pthread_create(&tid, NULL, thread, clientSock);
     }
+}
+
+void *thread(void* vargp){
+    int clientSock = *((int *)vargp);
+    pthread_detach(pthread_self());
+    free(vargp);
+    handleClient(clientSock);
+    close(clientSock);
+    return NULL;
 }
 
 void handleError(int errNum, int clientSock){
@@ -179,7 +191,7 @@ void handleClient(int clientSock){
         handleError(errNum, clientSock);
         return;
     }
-    
+
     handleReq(clientSock, fName, version);
 }
 
@@ -189,7 +201,7 @@ int startListen(int port){
     int optval; /* flag value for setsockopt */
 
     /*create parent socket*/
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) 
         perror("ERROR opening socket");
         return -1;
@@ -201,7 +213,7 @@ int startListen(int port){
     serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
     serveraddr.sin_port = htons((unsigned short)port);
     /*bind server socket*/
-    if (bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) 
+    if (bind(sockfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr)) < 0) 
         perror("ERROR on binding");
         return -1;
     /*Listen for incoming connections*/
